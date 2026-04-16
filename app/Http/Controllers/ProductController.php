@@ -14,6 +14,32 @@ use Illuminate\Support\Facades\Log;
 
 class ProductController extends Controller
 {
+    public function index(Request $request)
+    {
+        $query = Product::with('images');
+
+        if ($request->search) {
+            $query->where('name', 'like', '%' . $request->search . '%');
+        }
+
+        if ($request->category_id) {
+            $query->where('category_id', $request->category_id);
+        }
+
+        $products = $query->paginate($request->per_page ?? 10);
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Products retrieved',
+            'data' => ProductResource::collection($products->items()),
+
+                'current_page' => $products->currentPage(),
+                'last_page' => $products->lastPage(),
+                'per_page' => $products->perPage(),
+                'total' => $products->total(),
+
+        ]);
+    }
 
     public function store(Request $request, $slug)
     {

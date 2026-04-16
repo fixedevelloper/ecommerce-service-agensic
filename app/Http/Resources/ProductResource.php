@@ -22,7 +22,16 @@ class ProductResource extends JsonResource
             'stock' => $this->stock,
             'is_active' => $this->is_active,
 
-            // 🔥 images
+            // 🖼️ image principale (première image)
+            'image' => $this->whenLoaded('images', function () {
+                $firstImage = $this->images->first();
+
+                return $firstImage
+                    ? asset('storage/' . $firstImage->path)
+                    : null;
+            }),
+
+            // 🖼️ toutes les images
             'images' => $this->whenLoaded('images', function () {
                 return $this->images->map(fn ($img) => [
                     'id' => $img->id,
