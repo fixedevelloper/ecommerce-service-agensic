@@ -4,6 +4,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class Order extends Model
 {
@@ -31,6 +32,15 @@ class Order extends Model
         'amount' => 'float'
     ];
 
+    protected static function booted()
+    {
+        static::creating(function ($model) {
+            // Si l'ID n'est pas déjà défini, on génère un UUID
+            if (empty($model->{$model->getKeyName()})) {
+                $model->{$model->getKeyName()} = (string) Str::uuid();
+            }
+        });
+    }
     public function shop()
     {
         return $this->belongsTo(Shop::class);

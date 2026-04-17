@@ -1,11 +1,14 @@
 <?php
 
+use App\Http\Controllers\AddressController;
 use App\Http\Controllers\ImageController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ShopController;
 use Illuminate\Support\Facades\Route;
 
+
+Route::apiResource('addresses', AddressController::class);
 
 Route::prefix('shops')->group(function () {
     Route::post('/', [ShopController::class, 'store']);
@@ -25,6 +28,7 @@ Route::prefix('products')->group(function () {
 
 Route::prefix('orders')->group(function () {
     Route::get('/', [OrderController::class, 'index']);
+    Route::post('/', [OrderController::class, 'storeOrder']);
     Route::get('{id}', [OrderController::class, 'show']);
 });
 
