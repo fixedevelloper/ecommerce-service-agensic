@@ -8,8 +8,11 @@ use App\Http\Resources\OrderResource;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Notifications\OrderProcessed;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 
 class OrderController extends Controller
@@ -34,6 +37,28 @@ class OrderController extends Controller
             // 2. Utilisation d'une transaction pour la sécurité des données
             return DB::transaction(function () use ($validated, $request) {
                 $userId = $request->header('X-User-Id');
+                $customerData=[];
+                // 1. Appel au microservice Client
+                // On suppose que l'URL est définie dans votre .env
+                $microserviceUrl = env('USER_SERVICE_URL') . "/users/" . $userId;
+
+                $response = Http::withToken(env('API_SERVICE_TOKEN')) // Si vous avez une auth
+                ->get($microserviceUrl);
+
+                if ($response->successful()) {
+                    $customer = $response->json();
+                    $customerName = $customer['data']['name'] ?? 'Inconnu';
+                    $customerPhone = $customer['data']['phone'] ?? 'N/A';
+                } else {
+                    $customerName = "Erreur de récupération";
+                    $customerPhone = "N/A";
+                }
+                $customerData=[
+                    'country_name'=>$customer['customer_name'] ??'N/A',
+                    'country_code'=>$customer['country_code'] ??'N/A',
+                  'name'=>$customerName,
+                  'phone'=>$customerPhone
+                ];
                 // 3. Création de la commande principale
                 $order = Order::create([
                     'customer_id' => $userId,
@@ -65,6 +90,8 @@ class OrderController extends Controller
                      $product->decrement('stock', $item['quantity']);
                 }
 
+                Notification::route('telegram', config('services.telegram-bot-api.group_id'))
+                    ->notify(new OrderProcessed($order,$customerData));
                 return response()->json([
                     'success' => true,
                     'message' => 'Commande enregistrée avec succès',
