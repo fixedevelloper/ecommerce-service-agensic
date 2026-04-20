@@ -4,7 +4,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Helpers\Helpers;
 use App\Http\Resources\OrderResource;
+use App\Http\Services\microService\UserServiceClient;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
@@ -18,7 +20,54 @@ use Illuminate\Support\Str;
 class OrderController extends Controller
 {
 
+    protected $userService;
+    public function __construct(
+        UserServiceClient $userServiceClient
+    )
+    {
+        $this->userService=$userServiceClient;
+    }
+    public function index(Request $request)
+    {
+        // 1. Initialisation de la requête avec les relations locales indispensables
+        // On utilise withCount pour les items pour éviter de charger tous les produits en liste
+        $query = Order::with(['shop'])
+            ->withCount('items');
 
+        // 2. Recherche par référence ou client (ID)
+        if ($request->filled('search')) {
+            $query->where('reference', 'like', "%{$request->search}%");
+        }
+
+        // 3. Filtres avancés
+        $query->when($request->status, fn($q) => $q->where('status', $request->status))
+            ->when($request->shop_id, fn($q) => $q->where('shop_id', $request->shop_id))
+            ->when($request->payment_method, fn($q) => $q->where('payment_method', $request->payment_method));
+
+        // 4. Pagination
+        $orders = $query->latest()->paginate($request->per_page ?? 15);
+
+        // 5. Hydratation Cross-Service (Users)
+        // On récupère tous les IDs clients uniques de la page actuelle
+        $userIds = $orders->pluck('user_id')->unique()->filter()->toArray();
+
+        if (!empty($userIds)) {
+            // Appel au microservice User (via votre client HTTP interne)
+            $usersFromServer = $this->userService->getUsersByIds($userIds);
+
+            // On injecte les données dans chaque commande
+            $orders->getCollection()->transform(function ($order) use ($usersFromServer) {
+                $order->user_data = $usersFromServer[$order->user_id] ?? [
+                        'id' => $order->user_id,
+                        'name' => 'Utilisateur #' . $order->user_id
+                    ];
+                return $order;
+            });
+        }
+
+        // 6. Retour via la Resource
+        return OrderResource::collection($orders);
+    }
     public function storeOrder(Request $request)
     {
         // 1. Validation des données entrantes
@@ -106,7 +155,7 @@ class OrderController extends Controller
             ], 500);
         }
     }
-    public function index(Request $request)
+    public function Myindex(Request $request)
     {
         $orders = Order::with(['shop', 'items'])
             ->where('customer_id', $request->user_id)
@@ -118,9 +167,12 @@ class OrderController extends Controller
 
     public function show($id)
     {
-        $order = Order::with(['shop', 'items'])
+        $order = Order::with(['shop', 'billingAddress', 'shippingAddress', 'items.product'])
             ->findOrFail($id);
 
-        return new OrderResource($order);
+        // Récupération optionnelle du customer via microservice
+        $order->user_data = $this->userService->getUserById($order->user_id);
+
+        return Helpers::success(new OrderResource($order));
     }
 }
